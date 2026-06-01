@@ -36,6 +36,39 @@ test("follows chained bypass results up to max hops", async () => {
   ]);
 });
 
+test("uses refresh endpoint when requested", async () => {
+  const requestedUrls = [];
+  const client = createBypassClient({
+    apiKey: "key",
+    authHeader: "x-api-key",
+    fetchImpl: async (url) => {
+      requestedUrls.push(String(url));
+      return jsonResponse({ result: "https://download.example/file" });
+    }
+  });
+
+  const result = await client.bypass("https://linkvertise.com/example", { refresh: true });
+
+  assert.equal(result, "https://download.example/file");
+  assert.equal(new URL(requestedUrls[0]).pathname, "/premium/refresh");
+});
+
+test("sends configured auth header", async () => {
+  const seenHeaders = [];
+  const client = createBypassClient({
+    apiKey: "key",
+    authHeader: "x-api-key",
+    fetchImpl: async (_url, options) => {
+      seenHeaders.push(options.headers);
+      return jsonResponse({ result: "done" });
+    }
+  });
+
+  await client.bypass("https://linkvertise.com/example");
+
+  assert.equal(seenHeaders[0]["x-api-key"], "key");
+});
+
 test("returns a non-url result immediately", async () => {
   const client = createBypassClient({
     apiKey: "key",

@@ -1,6 +1,6 @@
 import { isUrlLike } from "./urlExtractor.js";
 
-const BYPASS_API_URL = "https://api.bypass.vip/premium/bypass";
+const BYPASS_API_BASE_URL = "https://api.bypass.vip/premium/";
 
 export function createBypassClient({
   apiKey,
@@ -9,8 +9,8 @@ export function createBypassClient({
   fetchImpl = fetch,
   queue = { schedule: (task) => task() }
 }) {
-  async function bypassOnce(url) {
-    const requestUrl = new URL(BYPASS_API_URL);
+  async function bypassOnce(url, { refresh = false } = {}) {
+    const requestUrl = new URL(refresh ? "refresh" : "bypass", BYPASS_API_BASE_URL);
     requestUrl.searchParams.set("url", url);
 
     const response = await queue.schedule(() =>
@@ -34,13 +34,13 @@ export function createBypassClient({
     return payload.result;
   }
 
-  async function bypass(url) {
+  async function bypass(url, options = {}) {
     let currentUrl = url;
     let lastResult = "";
 
     for (let hop = 0; hop < maxHops; hop += 1) {
       try {
-        const result = await bypassOnce(currentUrl);
+        const result = await bypassOnce(currentUrl, options);
         lastResult = result;
 
         if (!isUrlLike(result) || result === currentUrl) {

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createBypassClient } from "./bypassClient.js";
 import { readConfig, validateConfig } from "./config.js";
 import { RateLimitQueue } from "./rateLimitQueue.js";
@@ -19,17 +20,29 @@ async function main() {
   });
 
   const webhookUrl = new URL("/telegram/webhook", config.webhookBaseUrl).toString();
-  await telegramClient.setWebhook({
-    url: webhookUrl,
-    secretToken: config.telegramWebhookSecret
-  });
-  console.log(`Telegram webhook registered: ${webhookUrl}`);
+  if (config.skipTelegramWebhook) {
+    console.log(`Telegram webhook registration skipped: ${webhookUrl}`);
+  } else {
+    await telegramClient.setWebhook({
+      url: webhookUrl,
+      secretToken: config.telegramWebhookSecret
+    });
+    console.log(`Telegram webhook registered: ${webhookUrl}`);
+  }
 
   const app = createApp({
     telegramWebhookSecret: config.telegramWebhookSecret,
     telegramClient,
     bypassClient,
-    discordErrorWebhookUrl: config.discordErrorWebhookUrl
+    discordErrorWebhookUrl: config.discordErrorWebhookUrl,
+    authConfig: {
+      hackClubClientId: config.hackClubClientId,
+      hackClubClientSecret: config.hackClubClientSecret,
+      hackClubRedirectUri: config.hackClubRedirectUri,
+      jwtAccessSecret: config.jwtAccessSecret,
+      jwtRefreshSecret: config.jwtRefreshSecret,
+      isProduction: process.env.NODE_ENV === "production"
+    }
   });
 
   app.listen(config.port, () => {
