@@ -6,6 +6,7 @@ import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { createAuthService, normalizeHackClubUser } from "./auth.js";
 import { notifyDiscord, processTelegramUpdate } from "./bot.js";
+import { createLogger, serializeError } from "./logger.js";
 import { createHackClubOAuthClient } from "./oauthClient.js";
 import { isUrlLike } from "./urlExtractor.js";
 
@@ -21,7 +22,8 @@ export function createApp({
   authConfig = {},
   oauthClient,
   clientDistPath = DEFAULT_CLIENT_DIST,
-  serveClient = true
+  serveClient = true,
+  logger = createLogger("server")
 }) {
   const app = express();
   const auth = createAuthService({
@@ -46,9 +48,19 @@ export function createApp({
   app.use(cookieParser());
   app.use(express.json({ limit: "1mb" }));
   app.use((request, response, next) => {
-    console.log(`${request.method} ${request.originalUrl}`);
+    const startedAt = Date.now();
+    logger.info("request_started", {
+      method: request.method,
+      path: request.originalUrl,
+      ip: request.ip
+    });
     response.on("finish", () => {
-      console.log(`${request.method} ${request.originalUrl} ${response.statusCode}`);
+      logger.info("request_finished", {
+        method: request.method,
+        path: request.originalUrl,
+        statusCode: response.statusCode,
+        durationMs: Date.now() - startedAt
+      });
     });
     next();
   });
@@ -146,16 +158,38 @@ export function createApp({
   app.post("/telegram/webhook", async (request, response) => {
     const secretToken = request.get("x-telegram-bot-api-secret-token");
     if (secretToken !== telegramWebhookSecret) {
+      logger.warn("telegram_webhook_rejected", {
+        reason: "invalid_secret",
+        hasSecretToken: Boolean(secretToken),
+        secretTokenLength: secretToken?.length || 0,
+        updateId: request.body?.update_id
+      });
       response.status(401).json({ ok: false, error: "invalid webhook secret" });
       return;
     }
 
+    logger.info("telegram_webhook_accepted", {
+      updateId: request.body?.update_id,
+      hasMessage: Boolean(request.body?.message),
+      hasEditedMessage: Boolean(request.body?.edited_message)
+    });
     response.status(200).json({ ok: true });
 
     try {
-      await processTelegramUpdate(request.body, { bypassClient, telegramClient });
+      const result = await processTelegramUpdate(request.body, {
+        bypassClient,
+        telegramClient,
+        logger
+      });
+      logger.info("telegram_update_processed", {
+        updateId: request.body?.update_id,
+        result
+      });
     } catch (error) {
-      console.error("Telegram update processing failed", error);
+      logger.error("telegram_update_processing_failed", {
+        updateId: request.body?.update_id,
+        error: serializeError(error)
+      });
       await notifyDiscord(discordErrorWebhookUrl, error, fetchImpl);
     }
   });
@@ -172,7 +206,7 @@ export function createApp({
   }
 
   app.use((error, _request, response, _next) => {
-    console.error("Unhandled request error", error);
+    logger.error("unhandled_request_error", { error: serializeError(error) });
     response.status(500).json({ ok: false, error: "internal_server_error" });
   });
 

@@ -1,3 +1,4 @@
+import { createLogger, summarizeUrl } from "./logger.js";
 import { extractMessageText, extractUrls } from "./urlExtractor.js";
 
 export function formatTelegramReply(result) {
@@ -13,22 +14,55 @@ export function formatTelegramReply(result) {
   };
 }
 
-export async function processTelegramUpdate(update, { bypassClient, telegramClient }) {
+export async function processTelegramUpdate(update, {
+  bypassClient,
+  telegramClient,
+  logger = createLogger("bot")
+}) {
   const message = update?.message;
   if (!message?.chat?.id) {
+    logger.warn("telegram_update_ignored", {
+      updateId: update?.update_id,
+      reason: "missing_message"
+    });
     return { processed: false, reason: "missing_message" };
   }
 
   const text = extractMessageText(message);
   const urls = extractUrls(text);
+  logger.info("telegram_message_received", {
+    updateId: update?.update_id,
+    messageId: message.message_id,
+    chatId: message.chat.id,
+    chatType: message.chat.type,
+    textLength: text.length,
+    urlCount: urls.length,
+    urls: urls.map((url) => summarizeUrl(url))
+  });
+
   if (urls.length === 0) {
     return { processed: true, sent: 0 };
   }
 
   let sent = 0;
   for (const url of urls) {
+    logger.info("telegram_bypass_started", {
+      updateId: update?.update_id,
+      messageId: message.message_id,
+      chatId: message.chat.id,
+      url: summarizeUrl(url)
+    });
     const result = await bypassClient.bypass(url);
     const reply = formatTelegramReply(result);
+
+    logger.info("telegram_reply_sending", {
+      updateId: update?.update_id,
+      messageId: message.message_id,
+      chatId: message.chat.id,
+      resultIsUrl: typeof result === "string" && result.startsWith("https://"),
+      resultLength: typeof result === "string" ? result.length : 0,
+      parseMode: reply.parseMode || null
+    });
 
     await telegramClient.sendMessage({
       chatId: message.chat.id,
@@ -37,6 +71,12 @@ export async function processTelegramUpdate(update, { bypassClient, telegramClie
     });
 
     sent += 1;
+    logger.info("telegram_reply_sent", {
+      updateId: update?.update_id,
+      messageId: message.message_id,
+      chatId: message.chat.id,
+      sent
+    });
   }
 
   return { processed: true, sent };

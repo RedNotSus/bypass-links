@@ -1,22 +1,58 @@
-export function createTelegramClient({ botToken, fetchImpl = fetch }) {
+import { createLogger, serializeError } from "./logger.js";
+
+export function createTelegramClient({
+  botToken,
+  fetchImpl = fetch,
+  logger = createLogger("telegram")
+}) {
   const apiBase = `https://api.telegram.org/bot${botToken}`;
 
   async function telegramRequest(method, body) {
-    const response = await fetchImpl(`${apiBase}/${method}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json"
-      },
-      body: JSON.stringify(body)
+    const startedAt = Date.now();
+    logger.info("telegram_api_request_started", {
+      method,
+      chatId: body?.chat_id,
+      textLength: typeof body?.text === "string" ? body.text.length : undefined,
+      parseMode: body?.parse_mode,
+      webhookUrl: method === "setWebhook" ? body?.url : undefined
     });
 
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok || payload.ok === false) {
-      const description = payload.description || `HTTP ${response.status}`;
-      throw new Error(`Telegram ${method} failed: ${description}`);
-    }
+    try {
+      const response = await fetchImpl(`${apiBase}/${method}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(body)
+      });
 
-    return payload;
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload.ok === false) {
+        const description = payload.description || `HTTP ${response.status}`;
+        logger.error("telegram_api_request_failed", {
+          method,
+          statusCode: response.status,
+          description,
+          durationMs: Date.now() - startedAt
+        });
+        throw new Error(`Telegram ${method} failed: ${description}`);
+      }
+
+      logger.info("telegram_api_request_succeeded", {
+        method,
+        statusCode: response.status,
+        durationMs: Date.now() - startedAt
+      });
+
+      return payload;
+    } catch (error) {
+      logger.error("telegram_api_request_error", {
+        method,
+        durationMs: Date.now() - startedAt,
+        error: serializeError(error)
+      });
+      throw error;
+    }
   }
 
   function setWebhook({ url, secretToken }) {
