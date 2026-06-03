@@ -15,7 +15,7 @@ test("formats non-https result as plain text", () => {
   });
 });
 
-test("processes each extracted message url and sends a Telegram reply", async () => {
+test("processes only the first extracted message url and sends one Telegram reply", async () => {
   const bypassed = [];
   const sent = [];
   const result = await processTelegramUpdate(
@@ -40,8 +40,9 @@ test("processes each extracted message url and sends a Telegram reply", async ()
     }
   );
 
-  assert.deepEqual(result, { processed: true, sent: 2 });
-  assert.deepEqual(bypassed, ["https://one.com/a", "https://two.com/b"]);
+  assert.deepEqual(result, { processed: true, sent: 1 });
+  assert.deepEqual(bypassed, ["https://one.com/a"]);
+  assert.equal(sent.length, 1);
   assert.equal(sent[0].chatId, 123);
   assert.equal(sent[0].parseMode, "HTML");
 });

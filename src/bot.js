@@ -44,40 +44,41 @@ export async function processTelegramUpdate(update, {
     return { processed: true, sent: 0 };
   }
 
+  const [url] = urls;
   let sent = 0;
-  for (const url of urls) {
-    logger.info("telegram_bypass_started", {
-      updateId: update?.update_id,
-      messageId: message.message_id,
-      chatId: message.chat.id,
-      url: summarizeUrl(url)
-    });
-    const result = await bypassClient.bypass(url);
-    const reply = formatTelegramReply(result);
 
-    logger.info("telegram_reply_sending", {
-      updateId: update?.update_id,
-      messageId: message.message_id,
-      chatId: message.chat.id,
-      resultIsUrl: typeof result === "string" && result.startsWith("https://"),
-      resultLength: typeof result === "string" ? result.length : 0,
-      parseMode: reply.parseMode || null
-    });
+  logger.info("telegram_bypass_started", {
+    updateId: update?.update_id,
+    messageId: message.message_id,
+    chatId: message.chat.id,
+    url: summarizeUrl(url),
+    ignoredUrlCount: urls.length - 1
+  });
+  const result = await bypassClient.bypass(url);
+  const reply = formatTelegramReply(result);
 
-    await telegramClient.sendMessage({
-      chatId: message.chat.id,
-      text: reply.text,
-      parseMode: reply.parseMode
-    });
+  logger.info("telegram_reply_sending", {
+    updateId: update?.update_id,
+    messageId: message.message_id,
+    chatId: message.chat.id,
+    resultIsUrl: typeof result === "string" && result.startsWith("https://"),
+    resultLength: typeof result === "string" ? result.length : 0,
+    parseMode: reply.parseMode || null
+  });
 
-    sent += 1;
-    logger.info("telegram_reply_sent", {
-      updateId: update?.update_id,
-      messageId: message.message_id,
-      chatId: message.chat.id,
-      sent
-    });
-  }
+  await telegramClient.sendMessage({
+    chatId: message.chat.id,
+    text: reply.text,
+    parseMode: reply.parseMode
+  });
+
+  sent += 1;
+  logger.info("telegram_reply_sent", {
+    updateId: update?.update_id,
+    messageId: message.message_id,
+    chatId: message.chat.id,
+    sent
+  });
 
   return { processed: true, sent };
 }

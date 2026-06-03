@@ -81,9 +81,11 @@ test("returns a non-url result immediately", async () => {
 
 test("returns the last successful result when a chained request fails", async () => {
   let calls = 0;
+  const logs = [];
   const client = createBypassClient({
     apiKey: "key",
     authHeader: "Authorization",
+    logger: createTestLogger(logs),
     fetchImpl: async () => {
       calls += 1;
       if (calls === 1) {
@@ -99,6 +101,12 @@ test("returns the last successful result when a chained request fails", async ()
   });
 
   assert.equal(await client.bypass("https://example.com/start"), "https://example.com/next");
+  assert.equal(logs.find((entry) => entry.event === "bypass_api_request_failed")?.level, "warn");
+  assert.equal(
+    logs.find((entry) => entry.event === "bypass_returning_last_successful_result")?.level,
+    "warn"
+  );
+  assert.equal(logs.some((entry) => entry.level === "error"), false);
 });
 
 function jsonResponse(payload) {
@@ -106,5 +114,17 @@ function jsonResponse(payload) {
     ok: true,
     status: 200,
     json: async () => payload
+  };
+}
+
+function createTestLogger(logs) {
+  function write(level, event, details = {}) {
+    logs.push({ level, event, ...details });
+  }
+
+  return {
+    info: (event, details) => write("info", event, details),
+    warn: (event, details) => write("warn", event, details),
+    error: (event, details) => write("error", event, details)
   };
 }

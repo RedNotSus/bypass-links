@@ -11,7 +11,7 @@ export function createBypassClient({
   logger = createLogger("bypass"),
   queue = { schedule: (task) => task() }
 }) {
-  async function bypassOnce(url, { refresh = false } = {}) {
+  async function bypassOnce(url, { failureLogLevel = "error", refresh = false } = {}) {
     const requestUrl = new URL(refresh ? "refresh" : "bypass", BYPASS_API_BASE_URL);
     requestUrl.searchParams.set("url", url);
     const startedAt = Date.now();
@@ -32,7 +32,7 @@ export function createBypassClient({
     );
 
     if (!response.ok) {
-      logger.error("bypass_api_request_failed", {
+      logger[failureLogLevel]("bypass_api_request_failed", {
         statusCode: response.status,
         durationMs: Date.now() - startedAt,
         url: summarizeUrl(url)
@@ -72,7 +72,10 @@ export function createBypassClient({
           maxHops,
           url: summarizeUrl(currentUrl)
         });
-        const result = await bypassOnce(currentUrl, options);
+        const result = await bypassOnce(currentUrl, {
+          ...options,
+          failureLogLevel: lastResult ? "warn" : "error"
+        });
         lastResult = result;
 
         if (!isUrlLike(result) || result === currentUrl) {
@@ -86,14 +89,19 @@ export function createBypassClient({
 
         currentUrl = result;
       } catch (error) {
-        logger.error("bypass_hop_failed", {
-          hop: hop + 1,
-          hasLastResult: Boolean(lastResult),
-          error: serializeError(error)
-        });
         if (lastResult) {
+          logger.warn("bypass_returning_last_successful_result", {
+            hop: hop + 1,
+            result: summarizeUrl(lastResult),
+            error: serializeError(error)
+          });
           return lastResult;
         }
+        logger.error("bypass_hop_failed", {
+          hop: hop + 1,
+          hasLastResult: false,
+          error: serializeError(error)
+        });
         throw error;
       }
     }
